@@ -14,7 +14,6 @@ st.markdown("Developed by **Rukshan Weerasekara** | Creative Technologist")
 st.markdown("---")
 
 # --- 2. Load Model ---
-# We use st.cache_resource so the model only loads once
 @st.cache_resource
 def load_model():
     return YOLO('yolov8m.pt') 
@@ -24,7 +23,6 @@ model = load_model()
 # --- 3. Sidebar Configuration ---
 st.sidebar.header("Settings")
 conf_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5)
-st.sidebar.info("This tool uses YOLOv8m for high-accuracy tracking in video production workflows.")
 
 # --- 4. File Uploader ---
 uploaded_file = st.file_uploader("Upload an Image or Video", type=['jpg', 'jpeg', 'png', 'mp4', 'mov', 'avi'])
@@ -44,20 +42,29 @@ if uploaded_file is not None:
                 st.image(res_plotted, caption="Processed Image", use_container_width=True)
                 st.success("Detection Complete!")
 
-    # --- VIDEO PROCESSING ---
+    # --- VIDEO PROCESSING (FIXED) ---
     elif file_extension in ['mp4', 'mov', 'avi']:
         st.video(uploaded_file)
         
         if st.button("Start AI Tracking"):
-            # Save uploaded video to a temporary file
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_file.read())
+            # Create a temporary file with a proper suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tfile:
+                tfile.write(uploaded_file.read())
+                temp_path = tfile.name # Save the path
+
+            st.info("🔄 AI is processing the video. This may take a moment...")
             
-            st.info("🔄 AI is processing the video. This may take a moment depending on length...")
-            
-            # Run Tracking
-            # results[0].save_dir will show where YOLO saves the output
-            results = model.track(source=tfile.name, conf=conf_threshold, persist=True, save=True)
-            
-            st.success("✅ AI Processing Finished!")
-            st.write("For cloud deployment, the processed video is stored in the session directory. Download options are best handled in local environments.")
+            try:
+                # Run Tracking using the saved path
+                # We add 'persist=True' to keep tracking IDs
+                results = model.track(source=temp_path, conf=conf_threshold, persist=True, save=True)
+                
+                st.success("✅ AI Processing Finished!")
+                st.write("Video processing is complete. Check the 'runs' directory in your GitHub files for the output.")
+                
+            except Exception as e:
+                st.error(f"Error during tracking: {e}")
+            finally:
+                # Clean up the temporary file after processing
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
