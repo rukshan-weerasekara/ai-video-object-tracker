@@ -1,6 +1,5 @@
 streamlit
-yfinance
-pandas
-scikit-learn
-matplotlib
+ultralytics
+opencv-python-headless
+pillow
 numpy
