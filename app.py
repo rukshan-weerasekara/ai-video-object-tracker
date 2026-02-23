@@ -68,3 +68,35 @@ if uploaded_file is not None:
                 # Clean up the temporary file after processing
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
+if st.button("Start AI Tracking"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tfile:
+                tfile.write(uploaded_file.read())
+                temp_path = tfile.name 
+
+            st.info("🔄 AI is processing the video. This may take a moment...")
+            
+            try:
+                # 1. Run Tracking
+                results = model.track(source=temp_path, conf=conf_threshold, persist=True, save=True)
+                
+                # 2. Get the output video path
+                # YOLO saves to runs/detect/predictX/ or runs/detect/trackX/
+                output_folder = results[0].save_dir
+                output_video_path = os.path.join(output_folder, os.path.basename(temp_path))
+
+                if os.path.exists(output_video_path):
+                    st.success("✅ AI Processing Finished!")
+                    
+                    # 3. Create a Download Button
+                    with open(output_video_path, "rb") as file:
+                        btn = st.download_button(
+                            label="📥 Download Processed Video",
+                            data=file,
+                            file_name=f"processed_{uploaded_file.name}",
+                            mime="video/mp4"
+                        )
+                else:
+                    st.error("Could not find the processed video file.")
+                
+            except Exception as e:
+                st.error(f"Error during tracking: {e}")
