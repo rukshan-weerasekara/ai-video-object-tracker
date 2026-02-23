@@ -1,77 +1,63 @@
 import streamlit as st
-import yfinance as yf
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error
+from ultralytics import YOLO
+import cv2
+import tempfile
+import os
+from PIL import Image
 import numpy as np
 
-# --- 1. Page Config ---
-st.set_page_config(page_title="AI Market Intelligence", layout="wide")
+# --- 1. Page Configuration ---
+st.set_page_config(page_title="AI Video Tracker", layout="wide")
 
-st.title("📊 Advanced AI Market Intelligence Tool")
+st.title("🎬 AI Object Detection & Tracking Tool")
 st.markdown("Developed by **Rukshan Weerasekara** | Creative Technologist")
 st.markdown("---")
 
-# --- 2. Sidebar Inputs ---
-st.sidebar.header("Configuration")
-asset_ticker = st.sidebar.text_input("Enter Ticker (e.g., BTC-USD, TSLA, NVDA)", "BTC-USD").upper()
-time_period = '2y'
+# --- 2. Load Model ---
+# We use st.cache_resource so the model only loads once
+@st.cache_resource
+def load_model():
+    return YOLO('yolov8m.pt') 
 
-if st.sidebar.button("Run AI Forecast"):
-    try:
-        with st.spinner(f"Fetching data for {asset_ticker}..."):
-            # Data Acquisition
-            df = yf.download(asset_ticker, period=time_period, interval='1d')
+model = load_model()
 
-        if df.empty:
-            st.error("Invalid ticker or no data found.")
-        else:
-            # Feature Engineering
-            df['SMA_10'] = df['Close'].rolling(window=10).mean()
-            df['SMA_30'] = df['Close'].rolling(window=30).mean()
+# --- 3. Sidebar Configuration ---
+st.sidebar.header("Settings")
+conf_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5)
+st.sidebar.info("This tool uses YOLOv8m for high-accuracy tracking in video production workflows.")
 
-            delta = df['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            df['RSI'] = 100 - (100 / (1 + rs))
-            df = df.dropna()
+# --- 4. File Uploader ---
+uploaded_file = st.file_uploader("Upload an Image or Video", type=['jpg', 'jpeg', 'png', 'mp4', 'mov', 'avi'])
 
-            X = df[['SMA_10', 'SMA_30', 'RSI']]
-            y = df['Close']
+if uploaded_file is not None:
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    
+    # --- IMAGE PROCESSING ---
+    if file_extension in ['jpg', 'jpeg', 'png']:
+        img = Image.open(uploaded_file)
+        st.image(img, caption="Original Image", use_container_width=True)
+        
+        if st.button("Run Detection"):
+            with st.spinner("Analyzing image..."):
+                results = model.predict(img, conf=conf_threshold)
+                res_plotted = results[0].plot()
+                st.image(res_plotted, caption="Processed Image", use_container_width=True)
+                st.success("Detection Complete!")
 
-            # Model Training
-            split = int(0.8 * len(df))
-            X_train, X_test = X[:split], X[split:]
-            y_train, y_test = y[:split], y[split:]
-
-            model = RandomForestRegressor(n_estimators=200, random_state=42)
-            model.fit(X_train.values, y_train.values.ravel())
-
-            # Prediction
-            predictions = model.predict(X_test.values)
-            mae = mean_absolute_error(y_test, predictions)
-
-            latest_data = [[float(df['SMA_10'].iloc[-1]), float(df['SMA_30'].iloc[-1]), float(df['RSI'].iloc[-1])]]
-            next_day_prediction = model.predict(latest_data)[0]
-
-            # Display Results
-            current_price = float(df['Close'].iloc[-1])
-            change_pct = ((next_day_prediction - current_price) / current_price) * 100
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Current Price", f"${current_price:,.2f}")
-            col2.metric("AI Prediction", f"${next_day_prediction:,.2f}", f"{change_pct:+.2f}%")
-            col3.metric("Model Error (MAE)", f"${mae:,.2f}")
-
-            # Visualization
-            st.subheader(f"Historical Trend: {asset_ticker}")
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(df.index[-120:], df['Close'][-120:], label='Actual Price', color='#2c3e50')
-            ax.plot(df.index[-120:], df['SMA_10'][-120:], label='10-Day Trend', linestyle='--')
-            ax.legend()
-            st.pyplot(fig)
-
-    except Exception as e:
-        st.error(f"Status Error: {e}")
+    # --- VIDEO PROCESSING ---
+    elif file_extension in ['mp4', 'mov', 'avi']:
+        st.video(uploaded_file)
+        
+        if st.button("Start AI Tracking"):
+            # Save uploaded video to a temporary file
+            tfile = tempfile.NamedTemporaryFile(delete=False)
+            tfile.write(uploaded_file.read())
+            
+            st.info("🔄 AI is processing the video. This may take a moment depending on length...")
+            
+            # Run Tracking
+            # results[0].save_dir will show where YOLO saves the output
+            results = model.track(source=tfile.name, conf=conf_threshold, persist=True, save=True)
+            
+            st.success("✅ AI Processing Finished!")
+            st.write("For cloud deployment, the processed video is stored in the session directory. Download options are best handled in local environments.")
