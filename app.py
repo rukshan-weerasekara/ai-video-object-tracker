@@ -42,33 +42,12 @@ if uploaded_file is not None:
                 st.image(res_plotted, caption="Processed Image", use_container_width=True)
                 st.success("Detection Complete!")
 
-    # --- VIDEO PROCESSING (FIXED) ---
+    # --- VIDEO PROCESSING ---
     elif file_extension in ['mp4', 'mov', 'avi']:
         st.video(uploaded_file)
         
         if st.button("Start AI Tracking"):
             # Create a temporary file with a proper suffix
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tfile:
-                tfile.write(uploaded_file.read())
-                temp_path = tfile.name # Save the path
-
-            st.info("🔄 AI is processing the video. This may take a moment...")
-            
-            try:
-                # Run Tracking using the saved path
-                # We add 'persist=True' to keep tracking IDs
-                results = model.track(source=temp_path, conf=conf_threshold, persist=True, save=True)
-                
-                st.success("✅ AI Processing Finished!")
-                st.write("Video processing is complete. Check the 'runs' directory in your GitHub files for the output.")
-                
-            except Exception as e:
-                st.error(f"Error during tracking: {e}")
-            finally:
-                # Clean up the temporary file after processing
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-if st.button("Start AI Tracking"):
             with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tfile:
                 tfile.write(uploaded_file.read())
                 temp_path = tfile.name 
@@ -80,23 +59,41 @@ if st.button("Start AI Tracking"):
                 results = model.track(source=temp_path, conf=conf_threshold, persist=True, save=True)
                 
                 # 2. Get the output video path
-                # YOLO saves to runs/detect/predictX/ or runs/detect/trackX/
                 output_folder = results[0].save_dir
+                # Find the processed video in the output folder
                 output_video_path = os.path.join(output_folder, os.path.basename(temp_path))
 
+                # Note: YOLO sometimes changes extension to .avi for processing, 
+                # but if the file exists at output_video_path, we proceed.
                 if os.path.exists(output_video_path):
                     st.success("✅ AI Processing Finished!")
                     
                     # 3. Create a Download Button
                     with open(output_video_path, "rb") as file:
-                        btn = st.download_button(
+                        st.download_button(
                             label="📥 Download Processed Video",
                             data=file,
                             file_name=f"processed_{uploaded_file.name}",
                             mime="video/mp4"
                         )
                 else:
-                    st.error("Could not find the processed video file.")
+                    # Fallback: check if an .avi was created instead
+                    avi_path = output_video_path.replace(f'.{file_extension}', '.avi')
+                    if os.path.exists(avi_path):
+                        st.success("✅ AI Processing Finished (Saved as .avi)!")
+                        with open(avi_path, "rb") as file:
+                            st.download_button(
+                                label="📥 Download Processed Video (.avi)",
+                                data=file,
+                                file_name=f"processed_{uploaded_file.name.split('.')[0]}.avi",
+                                mime="video/x-msvideo"
+                            )
+                    else:
+                        st.error("Could not find the processed video file.")
                 
             except Exception as e:
                 st.error(f"Error during tracking: {e}")
+            finally:
+                # Clean up the temporary file after processing
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
